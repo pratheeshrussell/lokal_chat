@@ -1,0 +1,3 @@
+[submodule "packages/llama_cpp_dart"]
+	path = packages/llama_cpp_dart
+	url = https://github.com/danemadsen/llama_cpp_dart
