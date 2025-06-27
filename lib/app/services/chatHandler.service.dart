@@ -3,13 +3,14 @@ import 'dart:async';
 import 'package:cactus/cactus.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:lokal_chat/app/isolates/chat.isolate.dart';
 
 import 'package:lokal_chat/app/services/dbHandler.service.dart';
+import 'package:lokal_chat/app/types/chatIsolate.types.dart';
 import 'package:lokal_chat/app/types/db.types.dart';
-import 'package:queue/queue.dart';
 
 class ChatHandler extends GetxService {
-  CactusContext? _cactusContext;
+  
   RxList<ChatMessage> chatMessages = RxList<ChatMessage>([]);
   DbHandler dbHandler = Get.find<DbHandler>();
 
@@ -19,7 +20,11 @@ class ChatHandler extends GetxService {
   ModelEntity? selectedModel;
   RxList<ModelEntity> models = RxList<ModelEntity>([]);
 
+  // ChatIsolate
+  ChatIsolate chatIsolate = ChatIsolate();
+
   Future<ChatHandler> init() async {
+    await chatIsolate.startWorkerIsolate(_handleIsolateResponse);
     await initialize();
     return this;
   }
@@ -51,7 +56,6 @@ class ChatHandler extends GetxService {
 
   Future<void> setActiveModel(ModelEntity model) async {
     selectedModel = model;
-    _cactusContext?.free();
     await loadCactus();
     debugPrint("Selected Model: ${selectedModel?.modelFile}");
   }
@@ -59,39 +63,24 @@ class ChatHandler extends GetxService {
   Future<void> loadCactus() async {
     if (selectedModel != null) {
       isModelLoaded.value = false;
-      final params = CactusInitParams(
+      // model handling to be done in isolate
+      chatIsolate.workerSendPort?.send(InitializeModelCommand(
         modelPath: selectedModel!.localPath,
         contextSize: 2048,
         threads: 4,
-      );
-
-      _cactusContext = await CactusContext.init(params);
-      isModelLoaded.value = true;
-      debugPrint("Model loaded");
+      ));
     }
   }
 
-  final tokenQueue = Queue(delay: Duration(milliseconds: 10));
-
   Future<void> sendResponse(String currentresp) async {
-    await Future.delayed(Duration.zero);
+    // await Future.delayed(Duration.zero);
     debugPrint("CHATVIEW: Sending response: $currentresp");
     chatMessages.removeLast();
     chatMessages.add(ChatMessage(role: 'assistant', content: currentresp));
     chatMessages.refresh();
   }
-
+  String currentAssistantResponse = "";
   Future<void> chat(String message) async {
-    if (_cactusContext == null) {
-      chatMessages.add(
-        ChatMessage(
-          role: 'system',
-          content: 'Error: CactusContext not initialized.',
-        ),
-      );
-      return;
-    }
-
     final userMessage = ChatMessage(role: 'user', content: message);
 
     chatMessages.add(userMessage);
@@ -100,47 +89,30 @@ class ChatHandler extends GetxService {
     chatMessages.add(ChatMessage(role: 'assistant', content: ''));
     await Future.delayed(Duration(milliseconds: 50));
 
-    String currentAssistantResponse = "";
-    List<String> stopSeq = ['<|im_end|>', '<end_of_utterance>'];
+    
+    List<String> stopSeq = ['</s>', '<end_of_utterance>'];
     try {
       isChatLoading.value = true;
 
-      final completionParams = CactusCompletionParams(
-        messages: chatMessages,
+      List<Map<String, dynamic>> messagesHistory = chatMessages.map((message){
+        return {
+          'role': message.role,
+          'content': message.content,
+        };
+      }).toList();
+      currentAssistantResponse = "";
+
+      chatIsolate.workerSendPort?.send(CompletionCommand(
+        requestId: DateTime.now().millisecondsSinceEpoch.toString(),
+        messages: messagesHistory,
         stopSequences: stopSeq,
         temperature: 0.7,
         topK: 10,
         topP: 0.9,
         threads: 4,
-        onNewToken: (String token) {
-          if (!isChatLoading.value) return false;
+      ));
 
-          if (stopSeq.contains(token)) return false;
 
-          if (token.isNotEmpty) {
-            currentAssistantResponse += token;
-
-            if (chatMessages.isNotEmpty &&
-                chatMessages.last.role == 'assistant') {
-              final responseSnapshot = currentAssistantResponse.toString();
-              tokenQueue.add(() => sendResponse(responseSnapshot));
-              
-            }
-
-            debugPrint("Assistant Stream Response: $token");
-          }
-          return true;
-        },
-      );
-
-      _cactusContext!
-          .completionSmart(completionParams)
-          .then((value) {
-            debugPrint("Assistant Final Response: ${value.text}");
-          })
-          .whenComplete(() {
-            isChatLoading.value = false;
-          });
     } catch (e) {
       isChatLoading.value = false;
       _addErrorMessageToChat(
@@ -163,10 +135,52 @@ class ChatHandler extends GetxService {
     chatMessages.value = errorMessages;
   }
 
+  void handleNewToken(String token){
+    if (token.isNotEmpty) {
+      currentAssistantResponse += token;
+
+      if (chatMessages.isNotEmpty &&
+        chatMessages.last.role == 'assistant') {
+        final responseSnapshot = currentAssistantResponse.toString();
+        sendResponse(responseSnapshot);
+      }
+
+      debugPrint("Assistant Stream Response: $token");
+    }
+  }
+
+
+  void _handleIsolateResponse(Map<String, dynamic> response) {
+    
+    final type = response['type'];
+    // final requestId = response['requestId'];
+
+    switch (type) {
+      case 'isolate_ready':
+        debugPrint("Isolate ready");
+        break;
+      case 'model_ready':
+        isModelLoaded.value = true;
+        debugPrint("Model loaded");
+        break;
+      case 'token':
+        // Handle token updates
+        handleNewToken(response['token']);
+        break;
+      case 'completion':
+        // Handle chat completion
+        isChatLoading.value = false;
+        break;
+      case 'error':
+        // Handle errors
+        isChatLoading.value = false;
+        break;
+    }
+  }
+
   @override
   void onClose() {
-    _cactusContext?.free();
-    tokenQueue.dispose();
+    chatIsolate.dispose();
     super.onClose();
   }
 }
