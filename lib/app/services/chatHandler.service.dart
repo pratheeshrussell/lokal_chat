@@ -20,6 +20,8 @@ class ChatHandler extends GetxService {
   ModelEntity? selectedModel;
   RxList<ModelEntity> models = RxList<ModelEntity>([]);
 
+  int? chatId;
+
   // ChatIsolate
   ChatIsolate chatIsolate = ChatIsolate();
 
@@ -81,9 +83,23 @@ class ChatHandler extends GetxService {
   }
   String currentAssistantResponse = "";
   Future<void> chat(String message) async {
+    if(chatMessages.isEmpty && chatId == null){
+      String title = message.length > 10 ? 
+      message.substring(0, 11) : message;
+      chatId = await dbHandler.insertChat(
+        ChatEntity(title: title, pinned: false, lastUpdated: DateTime.now()));
+    }
+
+    if(chatId != null){
+      dbHandler.updateChatTime(chatId!).then((_){
+        // update side bar
+      });
+    }
+    
     final userMessage = ChatMessage(role: 'user', content: message);
 
     chatMessages.add(userMessage);
+    await handleCurrentChatCompletion('user');
     await Future.delayed(Duration.zero);
     // add a dummy message for assistant as well
     chatMessages.add(ChatMessage(role: 'assistant', content: ''));
@@ -149,11 +165,21 @@ class ChatHandler extends GetxService {
     }
   }
 
+  Future<void> handleCurrentChatCompletion(String sender) async {
+    ChatMessageEntity chatmsg = ChatMessageEntity(
+      message: chatMessages.last.content,
+      chatId: chatId!,
+      sentBy: sender,
+      model: selectedModel!.name,
+      metadata: '',
+      createdAt: DateTime.now()
+    );
+    await dbHandler.insertChatMessage(chatmsg);
+  }
 
-  void _handleIsolateResponse(Map<String, dynamic> response) {
-    
+
+  Future<void> _handleIsolateResponse(Map<String, dynamic> response) async {
     final type = response['type'];
-    // final requestId = response['requestId'];
 
     switch (type) {
       case 'isolate_ready':
@@ -170,6 +196,7 @@ class ChatHandler extends GetxService {
       case 'completion':
         // Handle chat completion
         isChatLoading.value = false;
+        await handleCurrentChatCompletion('assistant');
         break;
       case 'error':
         // Handle errors

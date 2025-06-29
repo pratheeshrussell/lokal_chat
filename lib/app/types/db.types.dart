@@ -1,12 +1,12 @@
 class ModelEntity {
-  int id;
+  int? id;
   String name;
   String modelFile;
   String localPath;
   bool isDefault;
 
   ModelEntity({
-    required this.id,
+    this.id,
     required this.name,
     required this.modelFile,
     required this.localPath,
@@ -36,14 +36,16 @@ class ModelEntity {
 }
 
 class ChatEntity {
-  int id;
+  int? id;
   String title;
   bool pinned;
+  DateTime lastUpdated;
 
   ChatEntity({
-    required this.id,
+    this.id,
     required this.title,
     required this.pinned,
+    required this.lastUpdated
   });
 
   factory ChatEntity.fromMap(Map<String, dynamic> map) {
@@ -51,6 +53,8 @@ class ChatEntity {
       id: map['id'],
       title: map['title'],
       pinned: (map['pinned'] == 1),
+      // milliseconds till epoc to Datetime
+      lastUpdated: DateTime.fromMicrosecondsSinceEpoch(map['lastUpdated'])
     );
   }
 
@@ -59,28 +63,30 @@ class ChatEntity {
       'id': id,
       'title': title,
       'pinned': pinned ? 1 : 0,
+      'lastUpdated': lastUpdated.millisecondsSinceEpoch
     };
   }
 }
 
 
 class ChatMessageEntity {
-  int id;
-  int chatId;
+  int? id;
   String message;
   String sentBy;
   String model;
-  String createdAt;
+  DateTime createdAt;
   String metadata;
-
+  int chatId;
+  
   ChatMessageEntity({
-    required this.id,
+    this.id,
     required this.chatId,
     required this.message,
     required this.sentBy,
     required this.model,
-    required this.createdAt,
     required this.metadata,
+
+    required this.createdAt,
   });
 
   factory ChatMessageEntity.fromMap(Map<String, dynamic> map) {
@@ -90,7 +96,7 @@ class ChatMessageEntity {
       message: map['message'],
       sentBy: map['sentBy'],
       model: map['model'],
-      createdAt: map['createdAt'],
+      createdAt: DateTime.fromMicrosecondsSinceEpoch(map['createdAt']),
       metadata: map['metadata'],
     );
   }
@@ -102,7 +108,7 @@ class ChatMessageEntity {
       'message': message,
       'sentBy': sentBy,
       'model': model,
-      'createdAt': createdAt,
+      'createdAt': createdAt.millisecondsSinceEpoch,
       'metadata': metadata,
     };
   }

@@ -5,6 +5,7 @@ import 'package:lokal_chat/app/modules/model_manager/controllers/model_manager_c
 import 'package:lokal_chat/app/services/chatHandler.service.dart';
 import 'package:lokal_chat/app/services/dbHandler.service.dart';
 import 'package:lokal_chat/app/services/modelHandler.service.dart';
+import 'package:lokal_chat/app/types/db.types.dart';
 import 'package:lokal_chat/app/types/model.types.dart';
 
 //ignore: must_be_immutable
@@ -86,16 +87,15 @@ class ModelSuggestTile extends GetView<ModelManagerController> {
     String modelName = model.value.url.split('/').last;
     String filePath = await AppPaths.modelsPath;
     debugPrint("Adding model to db");
-    await dbHandler.db.insert(
-      'models',
-      {
-        'name': model.value.modelName,
-        'model_file': model.value.modelName,
-        'local_path': '$filePath/$modelName',
-        'is_default': false
-      },
+
+    ModelEntity modelEntity = ModelEntity(
+      name: model.value.modelName,
+      modelFile: model.value.modelName,
+      localPath: '$filePath/$modelName',
+      isDefault: false,
     );
 
+    await dbHandler.insertModel(modelEntity);
     await chatHandler.loadAllModels();
   }
 

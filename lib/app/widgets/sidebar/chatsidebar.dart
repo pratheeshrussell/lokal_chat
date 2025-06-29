@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:lokal_chat/app/widgets/sidebar/chatsidebarheader.dart';
 
+import 'chatList.dart';
+
 class ChatDrawer extends StatelessWidget {
   const ChatDrawer({super.key});
 
@@ -16,7 +18,9 @@ class ChatDrawer extends StatelessWidget {
       child: ListView(
         padding: EdgeInsets.zero,
         children: <Widget>[
-          ChatSidebarHeader()
+          ChatSidebarHeader(),
+
+          ChatList()
           
         ],
       ),
